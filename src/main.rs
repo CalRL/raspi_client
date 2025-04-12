@@ -55,9 +55,15 @@ fn main() {
 
     let listener: TcpListener = TcpListener::bind("0.0.0.0:8000").expect("Could not bind");
     println!("Listening 0.0.0.0:8000");
-    for stream in listener.incoming() {
-        match stream {
+    for stream_result in listener.incoming() {
+        match stream_result {
             Ok(stream) => {
+                if let Ok(peer_addr) = stream.peer_addr() {
+                    println!("New connection from {}", peer_addr);
+                } else {
+                    println!("New connection (unknown address)");
+                }
+
                 let led: Arc<Mutex<OutputPin>> = Arc::clone(&led);
                 let state : Arc<Mutex<bool>>= Arc::clone(&led_state);
                 std::thread::spawn(move || handle_client(stream, led, state));
