@@ -1,12 +1,14 @@
 use std::io::{BufRead, BufReader, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::atomic::{AtomicBool, Ordering};
 use rppal::gpio::{Gpio, OutputPin};
+
 const LED_PIN: u8 = 17;
 fn handle_client(mut stream: TcpStream, led: Arc<Mutex<OutputPin>>, state: Arc<Mutex<bool>>) {
     let mut reader: BufReader<TcpStream> = BufReader::new(stream.try_clone().unwrap());
     loop {
-        let mut buffer: String = String::new();
+        let mut buffer: String= String::new();
         if reader.read_line(&mut buffer).unwrap() == 0 {
             break;
         }
@@ -47,6 +49,14 @@ fn handle_client(mut stream: TcpStream, led: Arc<Mutex<OutputPin>>, state: Arc<M
 }
 
 fn main() {
+    let running : Arc<AtomicBool>= Arc::new(AtomicBool::new(true));
+    let r : Arc<AtomicBool>= running.clone();
+
+    ctrlc::set_handler(move || {
+        println!("\nReceived Ctrl+C, shutting down...");
+        r.store(false, Ordering::SeqCst);
+    }).expect("Error setting Ctrl+C handler");
+
     let gpio: Gpio = Gpio::new().expect("Failed to access GPIO");
     let led_pin: OutputPin = gpio.get(LED_PIN).unwrap().into_output();
 
@@ -55,20 +65,27 @@ fn main() {
 
     let listener: TcpListener = TcpListener::bind("0.0.0.0:8000").expect("Could not bind");
     println!("Listening 0.0.0.0:8000");
-    for stream_result in listener.incoming() {
-        match stream_result {
-            Ok(stream) => {
-                if let Ok(peer_addr) = stream.peer_addr() {
-                    println!("New connection from {}", peer_addr);
-                } else {
-                    println!("New connection (unknown address)");
-                }
 
-                let led: Arc<Mutex<OutputPin>> = Arc::clone(&led);
-                let state : Arc<Mutex<bool>>= Arc::clone(&led_state);
-                std::thread::spawn(move || handle_client(stream, led, state));
+    listener.set_nonblocking(true).expect("Cannot set non-blocking");
+
+    while running.load(Ordering::SeqCst) {
+        match listener.accept() {
+            Ok((stream, addr)) => {
+                println!("New connection from {}", addr);
+
+                let led = Arc::clone(&led);
+                let state = Arc::clone(&led_state);
+                thread::spawn(move || handle_client(stream, led, state));
             }
-            Err(e) => eprintln!("Connection failed: {}", e),
+            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                // No connection available, yield and try again
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+            Err(e) => eprintln!("Accept error: {}", e),
         }
     }
+
+    println!("Cleaning up GPIO");
+    led.lock().unwrap().set_low();
+    println!("Shutdown.")
 }
