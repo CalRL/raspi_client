@@ -7,7 +7,7 @@ fn handle_client(mut stream: TcpStream, led: Arc<Mutex<OutputPin>>, state: Arc<M
     let mut reader: BufReader<TcpStream> = BufReader::new(stream.try_clone().unwrap());
     loop {
         let mut buffer: String = String::new();
-        if(reader.read_line(&mut buffer).unwrap() == 0) {
+        if reader.read_line(&mut buffer).unwrap() == 0 {
             break;
         }
 
