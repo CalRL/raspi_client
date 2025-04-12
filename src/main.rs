@@ -1,4 +1,4 @@
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -7,14 +7,30 @@ use rppal::gpio::{Gpio, OutputPin};
 
 const LED_PIN: u8 = 17;
 fn handle_client(mut stream: TcpStream, led: Arc<Mutex<OutputPin>>, state: Arc<Mutex<bool>>) {
-    let mut reader: BufReader<TcpStream> = BufReader::new(stream.try_clone().unwrap());
-    loop {
-        let mut buffer: String= String::new();
-        if reader.read_line(&mut buffer).unwrap() == 0 {
-            break;
-        }
 
-        let command: &str= buffer.trim();
+    stream.set_nodelay(true).unwrap();
+
+    let mut buffer: [u8; 64] = [0u8; 64];
+    loop {
+        let bytes_read = match stream.read(&mut buffer) {
+            Ok(0) => break,
+            Ok(n) => n,
+            Err(e) => {
+                eprintln!("Read error: {}", e);
+                break;
+            }
+        };
+
+        let raw = &buffer[..bytes_read];
+        let command = match std::str::from_utf8(raw) {
+            Ok(s) => s.trim(),
+            Err(_) => {
+                let _ = stream.write_all(b"Invalid UTF-8\n");
+                continue;
+            }
+        };
+
+
         println!("Received {}", command);
         let mut pin: MutexGuard<OutputPin> = led.lock().unwrap();
         let mut current_state: MutexGuard<bool> = state.lock().unwrap();
