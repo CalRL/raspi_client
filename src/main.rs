@@ -11,6 +11,7 @@ fn handle_client(mut stream: TcpStream, led: Arc<Mutex<OutputPin>>, state: Arc<M
     stream.set_nodelay(true).unwrap();
 
     let mut buffer: [u8; 64] = [0u8; 64];
+    let mut last_command = String::new();
     loop {
         let bytes_read = match stream.read(&mut buffer) {
             Ok(0) => break,
@@ -30,30 +31,33 @@ fn handle_client(mut stream: TcpStream, led: Arc<Mutex<OutputPin>>, state: Arc<M
             }
         };
 
+        if command == last_command {
+            continue; // skip repeated command
+        }
+        last_command = command.to_string();
 
         println!("Received {}", command);
         let mut pin: MutexGuard<OutputPin> = led.lock().unwrap();
         let mut current_state: MutexGuard<bool> = state.lock().unwrap();
-
         let response: String = match command {
             "toggle" => {
                 *current_state = !*current_state;
                 pin.write(if *current_state {
-                   rppal::gpio::Level::Low
+                   rppal::gpio::Level::High
                 } else {
-                    rppal::gpio::Level::High
+                    rppal::gpio::Level::Low
                 });
-                format!("LED is {}\n", if *current_state { "on" } else { "off" })
+                format!("PIN set to {}\n", if *current_state { "HIGH" } else { "LOW" })
             }
             "on" => {
-                pin.set_low();
+                pin.set_high();
                 *current_state = true;
-                "LED turned on\n".to_string()
+                "PIN set to HIGH\n".to_string()
             }
             "off" => {
-                pin.set_high();
+                pin.set_low();
                 *current_state = false;
-                "Led turned off\n".to_string()
+                "PIN set to LOW\n".to_string()
             }
             _ => "Invalid Command\n".to_string(),
         };
