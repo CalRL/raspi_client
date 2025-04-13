@@ -21,8 +21,8 @@ fn handle_client(mut stream: TcpStream, led: Arc<Mutex<OutputPin>>, state: Arc<M
             }
         };
 
-        let raw = &buffer[..bytes_read];
-        let command = match std::str::from_utf8(raw) {
+        let raw: &[u8] = &buffer[..bytes_read];
+        let command: &str = match std::str::from_utf8(raw) {
             Ok(s) => s.trim(),
             Err(_) => {
                 let _ = stream.write_all(b"Invalid UTF-8\n");
@@ -46,12 +46,12 @@ fn handle_client(mut stream: TcpStream, led: Arc<Mutex<OutputPin>>, state: Arc<M
                 format!("LED is {}\n", if *current_state { "on" } else { "off" })
             }
             "on" => {
-                pin.set_high();
+                pin.set_low();
                 *current_state = true;
                 "LED turned on\n".to_string()
             }
             "off" => {
-                pin.set_low();
+                pin.set_high();
                 *current_state = false;
                 "Led turned off\n".to_string()
             }
@@ -66,8 +66,8 @@ fn handle_client(mut stream: TcpStream, led: Arc<Mutex<OutputPin>>, state: Arc<M
 }
 
 fn main() {
-    let running : Arc<AtomicBool>= Arc::new(AtomicBool::new(true));
-    let r : Arc<AtomicBool>= running.clone();
+    let running: Arc<AtomicBool>= Arc::new(AtomicBool::new(true));
+    let r: Arc<AtomicBool>= running.clone();
 
     ctrlc::set_handler(move || {
         println!("\nReceived Ctrl+C, shutting down...");
@@ -75,7 +75,9 @@ fn main() {
     }).expect("Error setting Ctrl+C handler");
 
     let gpio: Gpio = Gpio::new().expect("Failed to access GPIO");
-    let led_pin: OutputPin = gpio.get(LED_PIN).unwrap().into_output();
+    let mut led_pin: OutputPin = gpio.get(LED_PIN).unwrap().into_output();
+
+    led_pin.set_high();
 
     let led: Arc<Mutex<OutputPin>> = Arc::new(Mutex::new(led_pin));
     let led_state: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
@@ -96,7 +98,7 @@ fn main() {
             }
             Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                 // No connection available, yield and try again
-                std::thread::sleep(std::time::Duration::from_millis(100));
+                thread::sleep(std::time::Duration::from_millis(100));
             }
             Err(e) => eprintln!("Accept error: {}", e),
         }
