@@ -31,11 +31,6 @@ fn handle_client(mut stream: TcpStream, led: Arc<Mutex<OutputPin>>, state: Arc<M
             }
         };
 
-        if command == last_command {
-            continue; // skip repeated command
-        }
-        last_command = command.to_string();
-
         println!("Received {}", command);
         let mut pin: MutexGuard<OutputPin> = led.lock().unwrap();
         let mut current_state: MutexGuard<bool> = state.lock().unwrap();
@@ -80,8 +75,6 @@ fn main() {
 
     let gpio: Gpio = Gpio::new().expect("Failed to access GPIO");
     let mut led_pin: OutputPin = gpio.get(LED_PIN).unwrap().into_output();
-
-    led_pin.set_high();
 
     let led: Arc<Mutex<OutputPin>> = Arc::new(Mutex::new(led_pin));
     let led_state: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
