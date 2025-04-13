@@ -39,9 +39,9 @@ fn handle_client(mut stream: TcpStream, led: Arc<Mutex<OutputPin>>, state: Arc<M
             "toggle" => {
                 *current_state = !*current_state;
                 pin.write(if *current_state {
-                   rppal::gpio::Level::High
+                   rppal::gpio::Level::Low
                 } else {
-                    rppal::gpio::Level::Low
+                    rppal::gpio::Level::High
                 });
                 format!("LED is {}\n", if *current_state { "on" } else { "off" })
             }
@@ -76,7 +76,7 @@ fn main() {
 
     let gpio: Gpio = Gpio::new().expect("Failed to access GPIO");
     let led_pin: OutputPin = gpio.get(LED_PIN).unwrap().into_output();
-    
+
     let led: Arc<Mutex<OutputPin>> = Arc::new(Mutex::new(led_pin));
     let led_state: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
 
@@ -103,6 +103,6 @@ fn main() {
     }
 
     println!("Cleaning up GPIO");
-    led.lock().unwrap().set_low();
+    led.lock().unwrap().set_high();
     println!("Shutdown.")
 }
