@@ -75,10 +75,8 @@ fn main() {
     }).expect("Error setting Ctrl+C handler");
 
     let gpio: Gpio = Gpio::new().expect("Failed to access GPIO");
-    let mut led_pin: OutputPin = gpio.get(LED_PIN).unwrap().into_output();
-
-    led_pin.set_high();
-
+    let led_pin: OutputPin = gpio.get(LED_PIN).unwrap().into_output();
+    
     let led: Arc<Mutex<OutputPin>> = Arc::new(Mutex::new(led_pin));
     let led_state: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
 
