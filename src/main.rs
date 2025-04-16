@@ -11,7 +11,6 @@ fn handle_client(mut stream: TcpStream, led: Arc<Mutex<OutputPin>>, state: Arc<M
     stream.set_nodelay(true).unwrap();
 
     let mut buffer: [u8; 64] = [0u8; 64];
-    let mut last_command = String::new();
     loop {
         let bytes_read = match stream.read(&mut buffer) {
             Ok(0) => break,
