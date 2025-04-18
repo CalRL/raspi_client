@@ -1,106 +1,135 @@
-use std::io::{BufRead, BufReader, Read, Write};
-use std::net::{TcpListener, TcpStream};
-use std::sync::{Arc, Mutex, MutexGuard};
+mod file;
+
+use std::io::{Read, Write};
+use std::net::TcpStream;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::thread;
-use rppal::gpio::{Gpio, OutputPin};
+use std::sync::Arc;
+use std::time::Duration;
+use rppal::gpio::{Gpio, Level};
 
 const LED_PIN: u8 = 17;
-fn handle_client(mut stream: TcpStream, led: Arc<Mutex<OutputPin>>, state: Arc<Mutex<bool>>) {
-
-    stream.set_nodelay(true).unwrap();
-
-    let mut buffer: [u8; 64] = [0u8; 64];
-    loop {
-        let bytes_read = match stream.read(&mut buffer) {
-            Ok(0) => break,
-            Ok(n) => n,
-            Err(e) => {
-                eprintln!("Read error: {}", e);
-                break;
-            }
-        };
-
-        let raw: &[u8] = &buffer[..bytes_read];
-        let command: &str = match std::str::from_utf8(raw) {
-            Ok(s) => s.trim(),
-            Err(_) => {
-                let _ = stream.write_all(b"Invalid UTF-8\n");
-                continue;
-            }
-        };
-
-        println!("Received {}", command);
-        let mut pin: MutexGuard<OutputPin> = led.lock().unwrap();
-        let mut current_state: MutexGuard<bool> = state.lock().unwrap();
-        let response: String = match command {
-            "toggle" => {
-                *current_state = !*current_state;
-                pin.write(if *current_state {
-                   rppal::gpio::Level::High
-                } else {
-                    rppal::gpio::Level::Low
-                });
-                format!("PIN set to {}\n", if *current_state { "HIGH" } else { "LOW" })
-            }
-            "on" => {
-                pin.set_high();
-                *current_state = true;
-                "PIN set to HIGH\n".to_string()
-            }
-            "off" => {
-                pin.set_low();
-                *current_state = false;
-                "PIN set to LOW\n".to_string()
-            }
-            _ => "Invalid Command\n".to_string(),
-        };
-
-        if let Err(e) = stream.write_all(response.as_bytes()) {
-            eprintln!("Failed to send response: {}", e);
-            break;
-        }
-    }
-}
 
 fn main() {
-    let running: Arc<AtomicBool>= Arc::new(AtomicBool::new(true));
-    let r: Arc<AtomicBool>= running.clone();
-
+    let running = Arc::new(AtomicBool::new(true));
+    let r = running.clone();
+    let server_addr: String = file::get_ip();
     ctrlc::set_handler(move || {
-        println!("\nReceived Ctrl+C, shutting down...");
+        println!("Ctrl+C pressed. Exiting...");
         r.store(false, Ordering::SeqCst);
     }).expect("Error setting Ctrl+C handler");
 
-    let gpio: Gpio = Gpio::new().expect("Failed to access GPIO");
-    let mut led_pin: OutputPin = gpio.get(LED_PIN).unwrap().into_output();
-
-    let led: Arc<Mutex<OutputPin>> = Arc::new(Mutex::new(led_pin));
-    let led_state: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
-
-    let listener: TcpListener = TcpListener::bind("0.0.0.0:8000").expect("Could not bind");
-    println!("Listening 0.0.0.0:8000");
-
-    listener.set_nonblocking(true).expect("Cannot set non-blocking");
-
+    let gpio = Gpio::new().expect("Failed to access GPIO");
+    let mut led = gpio.get(LED_PIN).unwrap().into_output();
+    let mut state = false;
+    println!("Starting at: {}", &server_addr);
     while running.load(Ordering::SeqCst) {
-        match listener.accept() {
-            Ok((stream, addr)) => {
-                println!("New connection from {}", addr);
+        match TcpStream::connect(&server_addr) {
+            Ok(mut stream) => {
+                println!("Connected to middleman at {}", &server_addr);
+                stream.set_nodelay(true).unwrap();
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(1)))
+                    .expect("Failed to set read timeout");
 
-                let led = Arc::clone(&led);
-                let state = Arc::clone(&led_state);
-                thread::spawn(move || handle_client(stream, led, state));
+                let mut buffer = [0u8; 128];
+
+                while running.load(Ordering::SeqCst) {
+                    match stream.read(&mut buffer) {
+                        Ok(0) => {
+                            println!("Server closed the connection.");
+                            break;
+                        }
+                        Ok(n) => {
+                            let raw = &buffer[..n];
+                            let text = match std::str::from_utf8(raw) {
+                                Ok(s) => s.trim(),
+                                Err(_) => {
+                                    let _ = stream.write_all(b"Invalid UTF-8\n");
+                                    continue;
+                                }
+                            };
+
+                            println!("Received raw: {}", text);
+
+                            let json = match json::parse(text) {
+                                Ok(j) => j,
+                                Err(e) => {
+                                    eprintln!("Invalid JSON: {}", e);
+                                    let _ = stream.write_all(b"Invalid JSON\n");
+                                    continue;
+                                }
+                            };
+
+                            let command_str = match json["command"].as_str() {
+                                Some(cmd) => cmd,
+                                None => {
+                                    eprintln!("Missing or invalid 'command' key.");
+                                    let _ = stream.write_all(b"Missing command\n");
+                                    continue;
+                                }
+                            };
+
+
+                            println!("Parsed command: {}", command_str);
+
+                            let response = match command_str {
+                                "toggle" => {
+                                    state = !state;
+                                    led.write(if state { Level::High } else { Level::Low });
+                                    format!("Toggled. Now {}\n", if state { "ON" } else { "OFF" })
+                                }
+                                "on" => {
+                                    led.set_high();
+                                    state = true;
+                                    "Set to ON\n".to_string()
+                                }
+                                "off" => {
+                                    led.set_low();
+                                    state = false;
+                                    "Set to OFF\n".to_string()
+                                }
+                                _ => "Unknown command\n".to_string(),
+                            };
+
+                            let source = json["source"].as_str().unwrap_or("unknown");
+                            let destination = json["destination"].as_str().unwrap_or("unknown");
+
+                            let response_json = json::object! {
+                                source: destination,
+                                destination: source,
+                                status: response
+
+                            };
+                            let response = format!("{}\n", response_json.dump());
+
+                            if let Err(e) = stream.write_all(response.as_bytes()) {
+                                eprintln!("Write error: {}", e);
+                                break;
+                            }
+                        }
+                        Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock
+                            || e.kind() == std::io::ErrorKind::TimedOut => {
+                            // ✅ Not really an error, just no data ready yet
+                            continue;
+                        }
+                        Err(e) => {
+                            eprintln!("Read error: {}", e);
+                            break;
+                        }
+                    }
+                }
+
+                println!("Disconnected. Retrying in 3s...");
+                std::thread::sleep(Duration::from_secs(3));
             }
-            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                // No connection available, yield and try again
-                thread::sleep(std::time::Duration::from_millis(100));
+            Err(e) => {
+                eprintln!("Connection failed: {}. Retrying in 3s...", e);
+                std::thread::sleep(Duration::from_secs(3));
             }
-            Err(e) => eprintln!("Accept error: {}", e),
         }
     }
 
-    println!("Cleaning up GPIO");
-    led.lock().unwrap().set_high();
-    println!("Shutdown.")
+    println!("Cleaning up GPIO...");
+    led.set_low();
+    println!("Shutdown complete.");
 }
