@@ -1,5 +1,7 @@
 mod file;
+mod debug;
 
+use std::fmt::format;
 use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -10,6 +12,7 @@ use rppal::gpio::{Gpio, Level};
 const LED_PIN: u8 = 17;
 
 fn main() {
+    println!("Debug Enabled: {}", debug::is_debug().to_string());
     let running = Arc::new(AtomicBool::new(true));
     let r = running.clone();
     let server_addr: String = file::get_ip();
@@ -68,9 +71,8 @@ fn main() {
                                     continue;
                                 }
                             };
-
-
-                            println!("Parsed command: {}", command_str);
+                            let msg = format!("Parsed command: {}", command_str);
+                            debug::log(&*msg);
 
                             let response = match command_str {
                                 "toggle" => {
@@ -91,6 +93,8 @@ fn main() {
                                 _ => "Unknown command\n".to_string(),
                             };
 
+                            debug::log(&response);
+
                             let source = json["source"].as_str().unwrap_or("unknown");
                             let destination = json["destination"].as_str().unwrap_or("unknown");
 
@@ -101,6 +105,8 @@ fn main() {
 
                             };
                             let response = format!("{}\n", response_json.dump());
+
+                            debug::log(&response);
 
                             if let Err(e) = stream.write_all(response.as_bytes()) {
                                 eprintln!("Write error: {}", e);

@@ -6,7 +6,7 @@ pub fn get_ip() -> String {
     value
 }
 
-fn read_env_value(key: &str, path: &str) -> Option<String> {
+pub fn read_env_value(key: &str, path: &str) -> Option<String> {
     let file = File::open(path).ok()?;
     let reader = BufReader::new(file);
 
