@@ -2,7 +2,6 @@ mod file;
 mod debug;
 mod config;
 
-use std::fmt::format;
 use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::sync::atomic::{AtomicBool, Ordering};

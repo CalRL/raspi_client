@@ -7,9 +7,3 @@ pub fn log(message: &str) {
         println!("{PREFIX} {}", message);
     }
 }
-
-pub fn warn(message: &str) {
-    if config::is_debug() {
-        eprintln!("{PREFIX} {}", message);
-    }
-}

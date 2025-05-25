@@ -1,6 +1,5 @@
 use std::env;
 use std::sync::OnceLock;
-use dotenv::dotenv;
 
 #[derive(Debug)]
 pub struct Config {
@@ -10,7 +9,6 @@ pub struct Config {
 static CONFIG: OnceLock<Config> = OnceLock::new();
 
 pub fn init() {
-    dotenv().ok();
 
     let debug = env::var("DEBUG")
         .map(|val| val == "true" || val == "1")
