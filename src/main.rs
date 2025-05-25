@@ -1,5 +1,6 @@
 mod file;
 mod debug;
+mod config;
 
 use std::fmt::format;
 use std::io::{Read, Write};
@@ -12,10 +13,14 @@ use rppal::gpio::{Gpio, Level};
 const LED_PIN: u8 = 17;
 
 fn main() {
-    println!("Debug Enabled: {}", debug::is_debug().to_string());
+    config::init();
+
+    println!("Debug Enabled: {}", config::is_debug().to_string());
     let running = Arc::new(AtomicBool::new(true));
     let r = running.clone();
+
     let server_addr: String = file::get_ip();
+
     ctrlc::set_handler(move || {
         println!("Ctrl+C pressed. Exiting...");
         r.store(false, Ordering::SeqCst);
@@ -52,7 +57,7 @@ fn main() {
                                 }
                             };
 
-                            println!("Received raw: {}", text);
+                            debug::log(&format!("Received raw: {}", text));
 
                             let json = match json::parse(text) {
                                 Ok(j) => j,
@@ -63,7 +68,7 @@ fn main() {
                                 }
                             };
 
-                            let command_str = match json["command"].as_str() {
+                            let command_str = match json["content"].as_str() {
                                 Some(cmd) => cmd,
                                 None => {
                                     eprintln!("Missing or invalid 'command' key.");
@@ -101,8 +106,8 @@ fn main() {
                             let response_json = json::object! {
                                 source: destination,
                                 destination: source,
-                                status: response
-
+                                content: response,
+                                "type": "RASPI"
                             };
                             let response = format!("{}\n", response_json.dump());
 
@@ -115,7 +120,6 @@ fn main() {
                         }
                         Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock
                             || e.kind() == std::io::ErrorKind::TimedOut => {
-                            // ✅ Not really an error, just no data ready yet
                             continue;
                         }
                         Err(e) => {
