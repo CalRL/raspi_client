@@ -12,7 +12,9 @@ use rppal::gpio::{Gpio, Level};
 const LED_PIN: u8 = 17;
 
 fn main() {
+    dotenvy::dotenv().ok();
     config::init();
+
 
     println!("Debug Enabled: {}", config::is_debug().to_string());
     let running = Arc::new(AtomicBool::new(true));
